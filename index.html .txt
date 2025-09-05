@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>رزرو میز اجرای زنده جواد</title>
+
+  <!-- Seatchart CSS & JS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/seatchart@0.1.0/dist/seatchart.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/seatchart@0.1.0/dist/seatchart.min.js"></script>
+
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+  <style>
+    body{font-family: sans-serif; margin:24px; line-height:1.6}
+    .wrap{max-width:860px;margin:auto}
+    .stage{padding:10px;border:1px dashed #ccc;text-align:center;margin-bottom:12px;border-radius:8px}
+    .panel{display:grid;gap:12px;margin-top:16px}
+    label{font-size:.95rem}
+    input,select,button{padding:10px;border:1px solid #ccc;border-radius:8px}
+    button{cursor:pointer}
+    .legend{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:8px 0}
+    .legend span{display:inline-block;padding:6px 10px;border-radius:6px;border:1px solid #ddd}
+    .success{background:#eaffea;border:1px solid #9ad89a;padding:10px;border-radius:8px;margin-top:12px;display:none}
+    .error{background:#ffeaea;border:1px solid #e09c9c;padding:10px;border-radius:8px;margin-top:12px;display:none}
+    footer{margin-top:28px;font-size:.9rem;color:#666}
+    .vip-seat{background:#ffd700 !important;} /* رنگ طلایی برای VIP */
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>رزرو میز اجرای زنده</h1>
+  <div class="stage">سن/استیج اینجاست 🎤</div>
+
+  <div id="chart" style="max-width:860px;"></div>
+
+  <div class="legend">
+    <span>قابل رزرو: مربع خالی</span>
+    <span>انتخاب شما: مربع هایلایت</span>
+    <span>رزروشده: قفل شده</span>
+    <span style="background:#ffd700;padding:6px 10px;border-radius:6px;border:1px solid #ddd;">VIP</span>
+  </div>
+
+  <div class="panel">
+    <div>
+      <label>تاریخ اجرا</label>
+      <input id="date" type="date" required>
+    </div>
+    <div>
+      <label>ساعت</label>
+      <select id="time">
+        <option>19:00</option>
+        <option>21:00</option>
+      </select>
+    </div>
+    <div>
+      <label>نام و نام‌خانوادگی</label>
+      <input id="name" placeholder="مثلاً علی رضایی">
+    </div>
+    <div>
+      <label>شماره تماس</label>
+      <input id="phone" placeholder="09xxxxxxxxx">
+    </div>
+    <div>
+      <button id="reserveBtn">ثبت رزرو</button>
+    </div>
+    <div class="success" id="okMsg">رزرو شما ثبت شد! جزئیات برای شما پیامک/تماس گرفته می‌شود.</div>
+    <div class="error" id="errMsg"></div>
+  </div>
+
+  <footer>طراحی شده برای رزرو میز با نقشه تعاملی.</footer>
+</div>
+
+<script>
+  // 1) تنظیم Firebase
+  const firebaseConfig = {
+    apiKey: "YOUR-FIREBASE-CONFIG",
+    authDomain: "YOUR-FIREBASE-CONFIG",
+    databaseURL: "YOUR-FIREBASE-CONFIG",
+    projectId: "YOUR-FIREBASE-CONFIG",
+    storageBucket: "YOUR-FIREBASE-CONFIG",
+    messagingSenderId: "YOUR-FIREBASE-CONFIG",
+    appId: "YOUR-FIREBASE-CONFIG"
+  };
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.database();
+
+  // 2) تعریف نقشه میزها
+  const seatsData = [
+    { id: '1', type: 'default', label:'4 نفره' },
+    { id: '2', type: 'default', label:'4 نفره' },
+    { id: '3', type: 'default', label:'4 نفره' },
+    { id: '4', type: 'default', label:'4 نفره' },
+    { id: '5', type: 'default', label:'4 نفره' },
+    { id: '6', type: 'default', label:'4 نفره' },
+    { id: '7', type: 'default', label:'4 نفره' },
+    { id: '8', type: 'default', label:'4 نفره' },
+    { id: '9', type: 'default', label:'8 نفره' },
+    { id: '10', type: 'default', label:'8 نفره' },
+    { id: '11', type: 'vip-seat', label:'VIP 10 نفره' }
+  ];
+
+  const chart = new Seatchart(document.getElementById('chart'), {
+    map: { rows: [seatsData.slice(0,4), seatsData.slice(4,8), seatsData.slice(8,11)] },
+    types: {
+      default: { label: 'میز', cssClass: 'sc-seat' },
+      'vip-seat': { label:'VIP', cssClass: 'vip-seat' }
+    },
+    legend: false,
+    seats: { click: true, multiple: true, selected: [] }
+  });
+
+  function pathFor(date, time){ return `bookings/${date}/${time}`; }
+
+  async function loadAndLockReserved(){
+    const date = document.getElementById('date').value;
+    const time = document.getElementById('time').value;
+    if(!date) return;
+
+    chart.unselectAll();
+    chart.getAll().forEach(seat => seat.enable());
+
+    const snap = await db.ref(pathFor(date,time)).get();
+    if(snap.exists()){
+      const reserved = Object.keys(snap.val());
+      reserved.forEach(id=>{
+        const seat = chart.get(id);
+        if(seat){ seat.disable(); }
+      });
+    }
+  }
+
+  document.getElementById('date').addEventListener('change', loadAndLockReserved);
+  document.getElementById('time').addEventListener('change', loadAndLockReserved);
+
+  document.getElementById('reserveBtn').addEventListener('click', async ()=>{
+    const okMsg = document.getElementById('okMsg');
+    const errMsg = document.getElementById('errMsg');
+    okMsg.style.display = 'none';
+    errMsg.style.display = 'none';
+
+    const date = document.getElementById('date').value;
+    const time = document.getElementById('time').value;
+    const name = document.getElementById('name').value.trim();
+    const phone = document.getElementById('phone').value.trim();
+    const selected = chart.getSelected().map(s=>s.getId());
+
+    if(!date || !time || !name || !phone || selected.length===0){
+      errMsg.textContent = 'لطفاً تاریخ، ساعت، نام، تلفن و حداقل یک میز را انتخاب کنید.';
+      errMsg.style.display = 'block';
+      return;
+    }
+
+    try{
+      await Promise.all(selected.map(async id=>{
+        const seatRef = db.ref(`${pathFor(date,time)}/${id}`);
+        await seatRef.transaction(current=>{
+          if(current) return;
+          return { name, phone, ts: Date.now() };
+        }).then(result=>{
+          if(result.committed !== true){
+            throw new Error(`میز ${id} همین الان رزرو شد.`);
+          }
+        });
+      }));
+
+      okMsg.style.display = 'block';
+      await loadAndLockReserved();
+      chart.unselectAll();
+      document.getElementById('name').value='';
+      document.getElementById('phone').value='';
+    }catch(e){
+      errMsg.textContent = e.message || 'خطا در ثبت رزرو.';
+      errMsg.style.display = 'block';
+      await loadAndLockReserved();
+    }
+  });
+
+  document.getElementById('date').value = new Date().toISOString().slice(0,10);
+  loadAndLockReserved();
+</script>
+</body>
+</html>
